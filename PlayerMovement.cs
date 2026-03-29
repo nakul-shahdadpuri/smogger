@@ -6,6 +6,8 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float rotationSpeed = 10f;
     [SerializeField] private Transform cameraTransform;
 
+    [SerializeField] private Transform nozzle;
+
     [Header("Debug")]
     [SerializeField] private bool forceAim = false;
 
@@ -13,6 +15,7 @@ public class PlayerMovement : MonoBehaviour
     private static readonly int IsWalking = Animator.StringToHash("IsWalking");
     private static readonly int IsRunning = Animator.StringToHash("IsRunning");
     private static readonly int IsAiming = Animator.StringToHash("IsAiming");
+    private static readonly int IsShooting = Animator.StringToHash("IsShooting");
     // private static readonly int IsDodging = Animator.StringToHash("IsDodging");
 
     private void Awake()
@@ -56,9 +59,12 @@ public class PlayerMovement : MonoBehaviour
         // Optional: log current aiming state (comment out if too spammy)
         // Debug.Log($"IsAiming: {isAiming}");
 
+        bool isShooting = isAiming && (Input.GetMouseButton(1) || Input.GetKey("joystick button 5"));
+
         animator.SetBool(IsWalking, hasInput);
         animator.SetBool(IsRunning, isRunning);
         animator.SetBool(IsAiming, isAiming);
+        animator.SetBool(IsShooting, isShooting);
 
         // bool isDodging = Input.GetKeyDown(KeyCode.Q) || Input.GetKeyDown("joystick button 1");
         // if (isDodging)
@@ -67,7 +73,30 @@ public class PlayerMovement : MonoBehaviour
         //     StartCoroutine(DodgeCoroutine());
         // }
 
-        if (hasInput)
+        if (isAiming)
+        {
+            Ray ray = new Ray(cameraTransform.position, cameraTransform.forward);
+            Vector3 aimPoint = Physics.Raycast(ray, out RaycastHit hit, 300f)
+                ? hit.point
+                : ray.GetPoint(300f);
+
+            // Use nozzle as reference if available, otherwise fall back to player position
+            Vector3 origin = nozzle != null ? nozzle.position : transform.position;
+            Vector3 nozzleForwardFlat = nozzle != null
+                ? Vector3.ProjectOnPlane(nozzle.forward, Vector3.up).normalized
+                : transform.forward;
+
+            Vector3 dirToAim = Vector3.ProjectOnPlane(aimPoint - origin, Vector3.up).normalized;
+
+            if (dirToAim.sqrMagnitude > 0.001f && nozzleForwardFlat.sqrMagnitude > 0.001f)
+            {
+                // Rotate player by the difference between nozzle forward and aim direction
+                float angleDiff = Vector3.SignedAngle(nozzleForwardFlat, dirToAim, Vector3.up);
+                Quaternion targetRotation = transform.rotation * Quaternion.Euler(0f, angleDiff, 0f);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            }
+        }
+        else if (hasInput)
         {
             Quaternion targetRotation = Quaternion.LookRotation(inputDirection);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
